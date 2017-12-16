@@ -32,7 +32,7 @@ class Vimeo
     const CLIENT_CREDENTIALS_TOKEN_ENDPOINT = '/oauth/authorize/client';
     const REPLACE_ENDPOINT = '/files';
     const VERSION_STRING = 'application/vnd.vimeo.*+json; version=3.2';
-    const USER_AGENT = 'vimeo.php 1.2.6; (http://developer.vimeo.com/api/docs)';
+    const USER_AGENT = 'vimeo.php 1.3.0; (http://developer.vimeo.com/api/docs)';
     const CERTIFICATE_PATH = '/certificates/vimeo-api.pem';
 
     protected $_curl_opts = array();
@@ -72,21 +72,24 @@ class Vimeo
      * @param array $params An array of parameters to send to the endpoint. If the HTTP method is GET, they will be added to the url, otherwise they will be written to the body
      * @param string $method The HTTP Method of the request
      * @param bool $json_body
+     * @param array $headers An array of HTTP headers to pass along with the request.
      * @return array This array contains three keys, 'status' is the status code, 'body' is an object representation of the json response body, and headers are an associated array of response headers
      */
-    public function request($url, $params = array(), $method = 'GET', $json_body = true)
+    public function request($url, $params = array(), $method = 'GET', $json_body = true, array $headers = array())
     {
-        // add accept header hardcoded to version 3.0
-        $headers[] = 'Accept: ' . self::VERSION_STRING;
-        $headers[] = 'User-Agent: ' . self::USER_AGENT;
+        $headers = array_merge(array(
+            'Accept' => self::VERSION_STRING,
+            'User-Agent' => self::USER_AGENT,
+        ), $headers);
+
         $method = strtoupper($method);
 
         // add bearer token, or client information
         if (!empty($this->_access_token)) {
-            $headers[] = 'Authorization: Bearer ' . $this->_access_token;
+            $headers['Authorization'] = 'Bearer ' . $this->_access_token;
         } else {
             //  this may be a call to get the tokens, so we add the client info.
-            $headers[] = 'Authorization: Basic ' . $this->_authHeader();
+            $headers['Authorization'] = 'Basic ' . $this->_authHeader();
         }
 
         //  Set the methods, determine the URL that we should actually request and prep the body.
@@ -107,7 +110,7 @@ class Vimeo
             case 'PUT':
             case 'DELETE':
                 if ($json_body && !empty($params)) {
-                    $headers[] = 'Content-Type: application/json';
+                    $headers['Content-Type'] = 'application/json';
                     $body = json_encode($params);
                 } else {
                     $body = http_build_query($params, '', '&');
@@ -123,7 +126,9 @@ class Vimeo
         }
 
         // Set the headers
-        $curl_opts[CURLOPT_HTTPHEADER] = $headers;
+        foreach ($headers as $key => $value) {
+            $curl_opts[CURLOPT_HTTPHEADER][] = sprintf('%s: %s', $key, $value);
+        }
 
         $response = $this->_request($curl_url, $curl_opts);
 
@@ -256,11 +261,11 @@ class Vimeo
      * you should look at the POST /me/videos endpoint.
      *
      * @param string $file_path Path to the video file to upload.
-     * @param boolean $upgrade_to_1080 Should we automatically upgrade the video file to 1080p
+     * @param string|null $machine_id
      * @throws VimeoUploadException
      * @return string Video URI
      */
-    public function upload($file_path, $upgrade_to_1080 = false, $machine_id = null)
+    public function upload($file_path, $machine_id = null)
     {
         // Validate that our file is real.
         if (!is_file($file_path)) {
@@ -268,7 +273,7 @@ class Vimeo
         }
 
         // Begin the upload request by getting a ticket
-        $ticket_args = array('type' => 'streaming', 'upgrade_to_1080' => $upgrade_to_1080);
+        $ticket_args = array('type' => 'streaming');
         if ($machine_id !== null) {
             $ticket_args['machine_id'] = $machine_id;
         }
@@ -282,11 +287,11 @@ class Vimeo
      *
      * @param string $video_uri Video uri of the video file to replace.
      * @param string $file_path Path to the video file to upload.
-     * @param boolean $upgrade_to_1080 Should we automatically upgrade the video file to 1080p
+     * @param string|null $machine_id
      * @throws VimeoUploadException
      * @return string Status
      */
-    public function replace($video_uri, $file_path, $upgrade_to_1080 = false, $machine_id = null)
+    public function replace($video_uri, $file_path, $machine_id = null)
     {
         //  Validate that our file is real.
         if (!is_file($file_path)) {
@@ -296,7 +301,7 @@ class Vimeo
         $uri = $video_uri . self::REPLACE_ENDPOINT;
 
         // Begin the upload request by getting a ticket
-        $ticket_args = array('type' => 'streaming', 'upgrade_to_1080' => $upgrade_to_1080);
+        $ticket_args = array('type' => 'streaming');
         if ($machine_id !== null) {
             $ticket_args['machine_id'] = $machine_id;
         }
